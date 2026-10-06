@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#283A2E"/>
+  <defs>
+    <linearGradient id="leafGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E2D4B7"/>
+      <stop offset="100%" stop-color="#F7F3E9"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A2B49E" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#6F8B6E" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer sanctuary circle -->
+  <circle cx="256" cy="256" r="172" fill="none" stroke="url(#ringGrad)" stroke-width="4" stroke-dasharray="4 6"/>
+  <!-- Elegant geometric trust arc -->
+  <circle cx="256" cy="256" r="148" fill="none" stroke="#D3C5A3" stroke-width="6"/>
+  <!-- Upright growth sprout / olive leaf symbolizing Amanah -->
+  <path d="M256 120 C 310 170, 320 250, 256 310 C 192 250, 202 170, 256 120 Z" fill="url(#leafGrad)"/>
+  <path d="M256 140 L256 295" stroke="#283A2E" stroke-width="3" stroke-linecap="round"/>
+  <!-- Central seed / trust point -->
+  <circle cx="256" cy="350" r="12" fill="#E2D4B7"/>
+  <!-- Calligraphic subtle mark "أمانة" in bottom arc -->
+  <text x="256" y="420" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', serif" font-size="28" font-weight="600" fill="#E7DFCE" text-anchor="middle" letter-spacing="4">AMANAH</text>
+</svg>
