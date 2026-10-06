@@ -13,9 +13,11 @@ import {
   DhikrProgress, 
   QuranTask, 
   EmergencyRequest,
-  DailyQuizRecord
+  DailyQuizRecord,
+  PartnerProfile
 } from '../../types/database';
 import { getSupabase, isSupabaseConfigured } from '../supabase/client';
+import { sendLocalNotification } from '../notifications/notificationService';
 
 const STORAGE_KEYS = {
   PROFILE: 'amanah_profile_v1',
@@ -249,6 +251,8 @@ class AmanahDataService {
   private quizListeners: Array<(score: DailyQuizRecord) => void> = [];
   private eventSource: EventSource | null = null;
   private pollInterval: any = null;
+  private supabaseEmergencyChannel: any = null;
+  private knownEmergencyIds = new Set<string>();
   private currentSyncUserId: string = 'local-user';
 
   constructor() {
@@ -272,7 +276,9 @@ class AmanahDataService {
     this.emergencyListeners.forEach((l) => l(list));
   }
 
-  // Start SSE & Polling sync for emergency alerts and shared updates
+  // Start cross-device sync for emergency alerts.
+  // Supabase Realtime is the source of truth when authenticated; the legacy
+  // server SSE path remains only as an offline/local-auth fallback.
   initEmergencySync(userId: string): void {
     if (typeof window === 'undefined') return;
     this.currentSyncUserId = userId;
@@ -285,15 +291,76 @@ class AmanahDataService {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    if (this.supabaseEmergencyChannel) {
+      const sb = getSupabase();
+      if (sb) sb.removeChannel(this.supabaseEmergencyChannel);
+      this.supabaseEmergencyChannel = null;
+    }
 
-    // 1. SSE Connection for instant Realtime dispatch
+    this.knownEmergencyIds = new Set(this.getEmergencyRequests().map((r) => r.id));
+
+    const sb = getSupabase();
+    if (sb && userId !== 'local-user') {
+      const channel = sb
+        .channel('amanah-emergency-' + userId)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'emergency_requests',
+            filter: 'recipient_user_id=eq.' + userId,
+          },
+          (payload) => {
+            const incoming = payload.new as EmergencyRequest;
+            if (!incoming?.id || incoming.sender_user_id === userId) return;
+
+            const isNew = !this.knownEmergencyIds.has(incoming.id);
+            this.knownEmergencyIds.add(incoming.id);
+
+            if (isNew) {
+              sendLocalNotification('Amanah — I Need You', {
+                body: incoming.message || 'Your connected partner reached out.',
+                icon: '/icon.svg',
+                badge: '/icon.svg',
+                tag: 'amanah-urgent-' + incoming.id,
+                data: { type: 'emergency_request', requestId: incoming.id, url: '/' },
+              });
+            }
+
+            void this.fetchActiveEmergencyRequests(userId);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'emergency_requests',
+            filter: 'recipient_user_id=eq.' + userId,
+          },
+          () => {
+            void this.fetchActiveEmergencyRequests(userId);
+          }
+        )
+        .subscribe();
+
+      this.supabaseEmergencyChannel = channel;
+      void this.fetchActiveEmergencyRequests(userId);
+      this.pollInterval = setInterval(() => {
+        void this.fetchActiveEmergencyRequests(this.currentSyncUserId);
+      }, 10000);
+      return;
+    }
+
+    // Legacy/local-auth fallback only.
     try {
-      const es = new EventSource(`/api/emergency/stream?userId=${encodeURIComponent(userId)}`);
+      const es = new EventSource('/api/emergency/stream?userId=' + encodeURIComponent(userId));
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'emergency_update') {
-            this.fetchActiveEmergencyRequests(userId);
+            void this.fetchActiveEmergencyRequests(userId);
           }
         } catch {}
       };
@@ -302,16 +369,38 @@ class AmanahDataService {
       console.warn('SSE connection note:', err);
     }
 
-    // 2. Reliable Polling fallback every 4 seconds
-    this.fetchActiveEmergencyRequests(userId);
+    void this.fetchActiveEmergencyRequests(userId);
     this.pollInterval = setInterval(() => {
-      this.fetchActiveEmergencyRequests(this.currentSyncUserId);
+      void this.fetchActiveEmergencyRequests(this.currentSyncUserId);
     }, 4000);
   }
-
   async fetchActiveEmergencyRequests(userId: string): Promise<EmergencyRequest[]> {
+    const sb = getSupabase();
+
+    if (sb && userId !== 'local-user') {
+      try {
+        const { data, error } = await sb
+          .from('emergency_requests')
+          .select('*')
+          .or('sender_user_id.eq.' + userId + ',recipient_user_id.eq.' + userId)
+          .order('created_at', { ascending: false });
+
+        if (!error) {
+          const requests = (data || []) as EmergencyRequest[];
+          writeLocal(STORAGE_KEYS.EMERGENCY_REQUESTS, requests);
+          requests.forEach((r) => this.knownEmergencyIds.add(r.id));
+          this.notifyEmergencyListeners(requests);
+          return requests;
+        }
+        console.warn('Supabase emergency realtime refresh error:', error);
+      } catch (err) {
+        console.warn('Supabase emergency refresh note:', err);
+      }
+    }
+
+    // Legacy/local-auth fallback.
     try {
-      const res = await fetch(`/api/emergency/active?userId=${encodeURIComponent(userId)}`);
+      const res = await fetch('/api/emergency/active?userId=' + encodeURIComponent(userId));
       if (res.ok) {
         const data = await res.json();
         if (data.requests) {
@@ -322,6 +411,7 @@ class AmanahDataService {
             ...current.filter((r) => !activeIds.has(r.id)),
           ];
           writeLocal(STORAGE_KEYS.EMERGENCY_REQUESTS, updated);
+          updated.forEach((r) => this.knownEmergencyIds.add(r.id));
           this.notifyEmergencyListeners(updated);
           return updated;
         }
@@ -329,7 +419,6 @@ class AmanahDataService {
     } catch {}
     return this.getEmergencyRequests();
   }
-
   async syncRelationshipFromServer(userId: string): Promise<Relationship> {
     try {
       const res = await fetch(`/api/relationships/${encodeURIComponent(userId)}`);
@@ -483,6 +572,19 @@ class AmanahDataService {
           ...(data as Relationship),
           partner_name: current.partner_name || 'Connected Person',
         };
+
+        if (relationship.status === 'accepted') {
+          try {
+            const { data: partnerRows } = await sb.rpc('get_partner_profile');
+            const partner = Array.isArray(partnerRows) ? partnerRows[0] as PartnerProfile | undefined : undefined;
+            if (partner?.display_name) {
+              relationship.partner_name = partner.display_name;
+            }
+          } catch (err) {
+            console.warn('Partner profile sync note:', err);
+          }
+        }
+
         writeLocal(STORAGE_KEYS.RELATIONSHIPS, relationship);
         return relationship;
       }
@@ -535,8 +637,29 @@ class AmanahDataService {
       ...(data as Relationship),
       partner_name: 'Connected Person',
     };
+
+    const partner = await this.loadPartnerProfile();
+    if (partner?.display_name) {
+      relationship.partner_name = partner.display_name;
+    }
+
     writeLocal(STORAGE_KEYS.RELATIONSHIPS, relationship);
     return relationship;
+  }
+
+  async loadPartnerProfile(): Promise<PartnerProfile | null> {
+    const sb = getSupabase();
+    if (!sb) return null;
+
+    try {
+      const { data, error } = await sb.rpc('get_partner_profile');
+      if (error) throw error;
+      const partner = Array.isArray(data) ? data[0] : null;
+      return partner ? (partner as PartnerProfile) : null;
+    } catch (err) {
+      console.warn('Supabase partner profile load error:', err);
+      return null;
+    }
   }
 
   async loadPartnerGoals(relationship?: Relationship): Promise<Goal[]> {
@@ -1514,44 +1637,73 @@ class AmanahDataService {
     const profile = this.getProfile();
     const relationship = await this.loadRelationship();
 
+    if (relationship.status !== 'accepted' || !relationship.user_b) {
+      throw new Error('Connect with your partner before sending I NEED YOU.');
+    }
+
+    const recipientId = relationship.user_a === profile.user_id ? relationship.user_b : relationship.user_a;
+    if (!recipientId) {
+      throw new Error('No connected partner is available to receive this request.');
+    }
+
     const request: EmergencyRequest = {
       id: generateUUID(),
       sender_user_id: profile.user_id,
       sender_name: profile.display_name,
-      recipient_user_id: relationship.user_b || 'partner',
+      recipient_user_id: recipientId,
       relationship_id: relationship.id,
       message: message || 'I NEED YOU',
       created_at: new Date().toISOString(),
       status: 'active',
     };
 
-    writeLocal(STORAGE_KEYS.EMERGENCY_REQUESTS, [request, ...list]);
-
-    // Send native notification if supported and permission granted
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification('Amanah — Urgent Call', {
-          body: `${profile.display_name}: ${message}`,
-          icon: '/icon.svg',
-          badge: '/icon.svg',
-          tag: 'amanah-urgent',
-        });
-      } catch (err) {
-        console.warn('Could not fire browser notification:', err);
-      }
-    }
-
     const sb = getSupabase();
     if (sb && profile.user_id !== 'local-user') {
-      try {
-        await sb.from('emergency_requests').insert(request);
-      } catch (err) {
-        console.warn('Supabase emergency request error:', err);
+      // The live table stores IDs/message/status only; sender_name is local display data.
+      const { data, error } = await sb
+        .from('emergency_requests')
+        .insert({
+          id: request.id,
+          sender_user_id: request.sender_user_id,
+          recipient_user_id: request.recipient_user_id,
+          relationship_id: request.relationship_id,
+          message: request.message,
+          created_at: request.created_at,
+          status: request.status,
+        })
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        throw error || new Error('Emergency request could not be stored.');
       }
+
+      const saved = {
+        ...(data as EmergencyRequest),
+        sender_name: request.sender_name,
+      };
+      writeLocal(STORAGE_KEYS.EMERGENCY_REQUESTS, [saved, ...list.filter((r) => r.id !== saved.id)]);
+      this.knownEmergencyIds.add(saved.id);
+      this.notifyEmergencyListeners(this.getEmergencyRequests());
+      return saved;
     }
+
+    writeLocal(STORAGE_KEYS.EMERGENCY_REQUESTS, [request, ...list]);
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      sendLocalNotification('Amanah — I Need You', {
+        body: profile.display_name + ': ' + message,
+        icon: '/icon.svg',
+        badge: '/icon.svg',
+        tag: 'amanah-urgent',
+        data: { type: 'emergency_request', requestId: request.id, url: '/' },
+      });
+    }
+
+    this.knownEmergencyIds.add(request.id);
+    this.notifyEmergencyListeners(this.getEmergencyRequests());
     return request;
   }
-
   async acknowledgeEmergencyRequest(id: string): Promise<EmergencyRequest | null> {
     const list = this.getEmergencyRequests();
     const idx = list.findIndex((r) => r.id === id);
@@ -1568,7 +1720,21 @@ class AmanahDataService {
     const sb = getSupabase();
     if (sb) {
       try {
-        await sb.from('emergency_requests').update(updated).eq('id', id);
+        const { data, error } = await sb
+          .from('emergency_requests')
+          .update({
+            status: updated.status,
+            acknowledged_at: updated.acknowledged_at,
+          })
+          .eq('id', id)
+          .select('*')
+          .single();
+        if (error) throw error;
+        if (data) {
+          const saved = { ...(data as EmergencyRequest), sender_name: updated.sender_name };
+          writeLocal(STORAGE_KEYS.EMERGENCY_REQUESTS, list.map((r) => (r.id === id ? saved : r)));
+          return saved;
+        }
       } catch (err) {
         console.warn('Supabase emergency ack error:', err);
       }
