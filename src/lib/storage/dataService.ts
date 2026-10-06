@@ -13,8 +13,7 @@ import {
   DhikrProgress, 
   QuranTask, 
   EmergencyRequest,
-  DailyQuizRecord,
-  PartnerProfile
+  DailyQuizRecord
 } from '../../types/database';
 import { getSupabase, isSupabaseConfigured } from '../supabase/client';
 import { sendLocalNotification } from '../notifications/notificationService';
@@ -45,6 +44,13 @@ export function getTodayKey(): string {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+interface PartnerProfileRow {
+  id: string;
+  display_name: string;
+  avatar_url?: string;
+  gender?: string;
 }
 
 export function generateUUID(): string {
@@ -576,7 +582,7 @@ class AmanahDataService {
         if (relationship.status === 'accepted') {
           try {
             const { data: partnerRows } = await sb.rpc('get_partner_profile');
-            const partner = Array.isArray(partnerRows) ? partnerRows[0] as PartnerProfile | undefined : undefined;
+            const partner = Array.isArray(partnerRows) ? partnerRows[0] as PartnerProfileRow | undefined : undefined;
             if (partner?.display_name) {
               relationship.partner_name = partner.display_name;
             }
@@ -647,7 +653,7 @@ class AmanahDataService {
     return relationship;
   }
 
-  async loadPartnerProfile(): Promise<PartnerProfile | null> {
+  async loadPartnerProfile(): Promise<PartnerProfileRow | null> {
     const sb = getSupabase();
     if (!sb) return null;
 
@@ -655,7 +661,7 @@ class AmanahDataService {
       const { data, error } = await sb.rpc('get_partner_profile');
       if (error) throw error;
       const partner = Array.isArray(data) ? data[0] : null;
-      return partner ? (partner as PartnerProfile) : null;
+      return partner ? (partner as PartnerProfileRow) : null;
     } catch (err) {
       console.warn('Supabase partner profile load error:', err);
       return null;
