@@ -1485,7 +1485,7 @@ class AmanahDataService {
     let streak = 0;
     const cursor = new Date();
     for (let i = 0; i < 365; i += 1) {
-      const key = getTodayKey(cursor);
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
       const task = all[key];
       if (!task || !task.completed) break;
       streak += 1;
