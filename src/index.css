@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-serif: 'Amiri', 'Source Serif 4', Georgia, serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .font-serif {
+    font-family: var(--font-serif);
+  }
+}
+
+/* Safe areas for mobile devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 1rem);
+}
+
+/* Custom scrollbar suppression for tab bars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Feminine soft minimal theme overrides */
+.theme-feminine {
+  background-color: #FAF8F6;
+  color: #241D1E;
+}
+
+.theme-feminine .bg-\[\#2E473B\] {
+  background-color: #435246;
+}
+
+.theme-feminine .hover\:bg-\[\#23372E\]:hover {
+  background-color: #354238;
+}
+
+.theme-feminine .border-\[\#2E473B\] {
+  border-color: #435246;
+}
+
+/* Minimal Dark Theme overrides */
+.theme-dark {
+  background-color: #121614 !important;
+  color: #E6EAE7 !important;
+}
+
+.theme-dark header,
+.theme-dark nav {
+  background-color: rgba(18, 22, 20, 0.95) !important;
+  border-color: #242D27 !important;
+}
+
+.theme-dark .bg-white {
+  background-color: #1A211D !important;
+  border-color: #28332B !important;
+}
+
+.theme-dark .bg-\[\#FBFBF9\] {
+  background-color: #161D19 !important;
+}
+
+.theme-dark .bg-\[\#F6F4ED\],
+.theme-dark .bg-\[\#FAF8F3\],
+.theme-dark .bg-\[\#FDFBF7\],
+.theme-dark .bg-\[\#F7F5EE\],
+.theme-dark .bg-\[\#F4F1EA\],
+.theme-dark .bg-\[\#EFECE6\] {
+  background-color: #202923 !important;
+  border-color: #2E3B33 !important;
+}
+
+.theme-dark .text-\[\#1F2421\] {
+  color: #EFF2EE !important;
+}
+
+.theme-dark .text-\[\#505D54\],
+.theme-dark .text-\[\#4A554D\],
+.theme-dark .text-\[\#525E56\],
+.theme-dark .text-\[\#6B756E\] {
+  color: #A6B4A9 !important;
+}
+
+.theme-dark .border-\[\#EAE6DD\],
+.theme-dark .border-\[\#E5DFD3\],
+.theme-dark .border-\[\#E3DDD1\],
+.theme-dark .border-\[\#D5CEC2\],
+.theme-dark .border-\[\#DDD7CB\],
+.theme-dark .border-\[\#DCD6C8\],
+.theme-dark .border-\[\#EBE7DF\] {
+  border-color: #2A362E !important;
+}
