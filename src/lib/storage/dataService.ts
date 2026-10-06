@@ -1480,6 +1480,30 @@ class AmanahDataService {
     return this.updateQuranPages(pages, dateStr);
   }
 
+  calculateQuranStreak(): number {
+    const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    let streak = 0;
+    const cursor = new Date();
+    for (let i = 0; i < 365; i += 1) {
+      const key = getTodayKey(cursor);
+      const task = all[key];
+      if (!task || !task.completed) break;
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  async logQuranStatus(status: 'completed' | 'busy'): Promise<{ task: QuranTask; streak: number }> {
+    const task = status === 'completed'
+      ? await this.updateQuranPages(this.getQuranTask().pages_target)
+      : this.getQuranTask();
+    return {
+      task,
+      streak: this.calculateQuranStreak(),
+    };
+  }
+
   // EMERGENCY REQUESTS ("I NEED YOU")
   getEmergencyRequests(): EmergencyRequest[] {
     return readLocal<EmergencyRequest[]>(STORAGE_KEYS.EMERGENCY_REQUESTS, []);
