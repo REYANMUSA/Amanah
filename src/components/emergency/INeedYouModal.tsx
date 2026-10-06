@@ -240,10 +240,10 @@ export const INeedYouModal: React.FC<INeedYouModalProps> = ({
 
             <div>
               <h4 className="text-lg font-serif font-bold text-[#1F2421] mb-1">
-                Message Delivered
+                Request Sent
               </h4>
               <p className="text-xs text-[#505D54] leading-relaxed max-w-xs mx-auto">
-                Your message has been delivered to your partner. May Allah grant you patience and bring you together in goodness.
+                Your request was sent to your connected partner. They will receive it when Amanah can reach their device.
               </p>
             </div>
 
