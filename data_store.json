@@ -1,0 +1,106 @@
+{
+  "users": [
+    {
+      "id": "usr_1791210679324_cmqem",
+      "email": "usera_1791210679173@test.com",
+      "passwordHash": "3cdbacc583b1b5de547c2e1c4b9e9a5674a5c693e6a2068a017d8295d34dd30f",
+      "salt": "5d54079a4509c8a3750f48b764efb706",
+      "display_name": "User A",
+      "created_at": "2026-10-05T14:31:19.324Z"
+    },
+    {
+      "id": "usr_1791210686962_g8fy2",
+      "email": "test@test.com",
+      "passwordHash": "f421d287747a6a1376a52ce0ad958fe417d253403ede7f3117613d9d654c2281",
+      "salt": "20b31e5625d3a185c57ff1ee0ef6e4da",
+      "display_name": "test",
+      "created_at": "2026-10-05T14:31:26.962Z"
+    },
+    {
+      "id": "usr_1791210705095_2uy0z",
+      "email": "usera_1791210704935@test.com",
+      "passwordHash": "6ab67362a145759b658e69a3bdafb3c02031060b5139605ed17b4614295ff5e2",
+      "salt": "ab297c9634b47f0cccf122811ce1d8da",
+      "display_name": "User A",
+      "created_at": "2026-10-05T14:31:45.095Z"
+    },
+    {
+      "id": "usr_1791210705122_alcar",
+      "email": "userb_1791210705113@test.com",
+      "passwordHash": "2413b918c3b603c6236e9b3098ba1d3c416cfd8ca9a37ee9034b7aa5ddab7b78",
+      "salt": "066a2ac2e1728bad51782b580a67bc26",
+      "display_name": "User B",
+      "created_at": "2026-10-05T14:31:45.122Z"
+    },
+    {
+      "id": "usr_1791210745988_psn8k",
+      "email": "usera_1791210745836@test.com",
+      "passwordHash": "bdf05090436d145c7fb6d5c714c44d468a4ab2e1c82dc4f19c63d332ca50c439",
+      "salt": "90e48ee155a8c9efc181014c1ef73f17",
+      "display_name": "User A",
+      "created_at": "2026-10-05T14:32:25.988Z"
+    },
+    {
+      "id": "usr_1791210746007_r81a5",
+      "email": "userb_1791210746001@test.com",
+      "passwordHash": "cb9f8dd261d5857d628c9cbfb197707425b981a61c869749a8ca1fa1b5be5fe3",
+      "salt": "4e3f925d486bfd9b0a0c3503b56e819a",
+      "display_name": "User B",
+      "created_at": "2026-10-05T14:32:26.007Z"
+    }
+  ],
+  "relationships": [
+    {
+      "id": "rel_p9618da",
+      "user_a": "usr_1791210705095_2uy0z",
+      "invite_code": "AMANAH-N3QRA",
+      "status": "accepted",
+      "created_at": "2026-10-05T14:31:45.130Z",
+      "user_b": "usr_1791210705122_alcar",
+      "user_b_name": "User B",
+      "accepted_at": "2026-10-05T14:31:45.139Z"
+    },
+    {
+      "id": "rel_9491n6y",
+      "user_a": "usr_1791210745988_psn8k",
+      "invite_code": "AMANAH-14C9Q",
+      "status": "accepted",
+      "created_at": "2026-10-05T14:32:26.018Z",
+      "user_b": "usr_1791210746007_r81a5",
+      "user_b_name": "User B",
+      "accepted_at": "2026-10-05T14:32:26.026Z"
+    }
+  ],
+  "emergency_requests": [
+    {
+      "id": "emg_1791210758087_euwox",
+      "sender_user_id": "test-sender-1",
+      "sender_name": "Sender Test",
+      "recipient_user_id": "partner",
+      "message": "Realtime test!",
+      "created_at": "2026-10-05T14:32:38.087Z",
+      "status": "active"
+    },
+    {
+      "id": "emg_1791210746034_hlc3e",
+      "sender_user_id": "usr_1791210745988_psn8k",
+      "sender_name": "User A",
+      "recipient_user_id": "usr_1791210746007_r81a5",
+      "relationship_id": "rel_9491n6y",
+      "message": "Please call me!",
+      "created_at": "2026-10-05T14:32:26.034Z",
+      "status": "acknowledged",
+      "acknowledged_at": "2026-10-05T14:32:26.047Z"
+    },
+    {
+      "id": "emg_1791210705146_dzluf",
+      "sender_user_id": "usr_1791210705095_2uy0z",
+      "sender_name": "User A",
+      "recipient_user_id": "usr_1791210705122_alcar",
+      "relationship_id": "rel_p9618da",
+      "message": "Please call me!",
+      "created_at": "2026-10-05T14:31:45.146Z",
+      "status": "active"
+    }
+  ]
+}

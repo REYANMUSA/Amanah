@@ -1,0 +1,6 @@
+{
+  "name": "Amanah",
+  "description": "Private, calm, mobile-first personal growth and halal-future companion app — Becoming better, one day at a time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

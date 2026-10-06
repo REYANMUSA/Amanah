@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Amanah</title>
+    <meta name="description" content="Private, calm, mobile-first personal growth and halal-future companion app — Becoming better, one day at a time." />
+    <meta property="og:title" content="Amanah" />
+    <meta property="og:description" content="Private, calm, mobile-first personal growth and halal-future companion app — Becoming better, one day at a time." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#283A2E" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Amanah" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      // Gracefully ignore Vite HMR WebSocket connection errors (HMR is disabled in AI Studio)
+      (function() {
+        const origErr = console.error;
+        const origWarn = console.warn;
+        console.error = function(...args) {
+          const msg = args[0] ? String(args[0]) : '';
+          if (msg.includes('send was called before connect') || msg.includes('[vite] connecting...') || msg.includes('WebSocket')) {
+            return;
+          }
+          origErr.apply(console, args);
+        };
+        console.warn = function(...args) {
+          const msg = args[0] ? String(args[0]) : '';
+          if (msg.includes('send was called before connect') || msg.includes('[vite]') || msg.includes('WebSocket')) {
+            return;
+          }
+          origWarn.apply(console, args);
+        };
+        window.addEventListener('error', function(e) {
+          const msg = e.message ? String(e.message) : '';
+          if (msg.includes('send was called before connect') || msg.includes('WebSocket')) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function(e) {
+          const reason = e.reason ? String(e.reason) : '';
+          if (reason.includes('send was called before connect') || reason.includes('WebSocket')) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }, true);
+      })();
+    </script>
+  </head>
+  <body class="bg-[#FBFBF9] text-[#1F2421] antialiased selection:bg-[#E2D4B7] selection:text-[#1F2421]">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
