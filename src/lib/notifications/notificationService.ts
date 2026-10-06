@@ -67,12 +67,29 @@ export function sendLocalNotification(title: string, options?: NotificationOptio
     return false;
   }
 
+  const notificationOptions: NotificationOptions = {
+    icon: '/icon.svg',
+    badge: '/icon.svg',
+    ...options,
+  };
+
   try {
-    new Notification(title, {
-      icon: '/icon.svg',
-      badge: '/icon.svg',
-      ...options,
-    });
+    // Prefer the service worker on mobile/PWA because Window Notification
+    // can be unavailable or unreliable in installed/background web apps.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((registration) => registration.showNotification(title, notificationOptions))
+        .catch(() => {
+          try {
+            new Notification(title, notificationOptions);
+          } catch (err) {
+            console.warn('Could not trigger notification:', err);
+          }
+        });
+      return true;
+    }
+
+    new Notification(title, notificationOptions);
     return true;
   } catch (err) {
     console.warn('Could not trigger notification:', err);
