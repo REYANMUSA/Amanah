@@ -33,7 +33,7 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: null,
-        includeAssets: ['icon.svg', 'apple-touch-icon.png`, 'pwa-192x192.png`, 'pwa-512x512.png`, 'pwa-maskable-512x512.png'],
+        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: base,
           name: 'Amanah',
