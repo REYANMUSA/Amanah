@@ -122,3 +122,8 @@ In Android Studio, you can test on an emulator or build a signed release APK / A
 - [x] Our Journey timeline supports milestone logs and photo preview.
 - [x] PWA manifest and service worker precaching active.
 - [x] Android back-button popstate handling closes modals gracefully.
+
+
+## GitHub Pages
+
+Amanah is built for GitHub Pages through the repository workflow under `.github/workflows/deploy-pages.yml`.
