@@ -6,7 +6,11 @@ import {VitePWA} from 'vite-plugin-pwa';
 import {apiRouter} from './src/server/api';
 
 export default defineConfig(() => {
+  const isGitHubPages = process.env.GITHUB_ACTIONS === 'true';
+  const base = isGitHubPages ? '/Amanah/' : '/';
+
   return {
+    base,
     plugins: [
       {
         name: 'vite-plugin-ws-fallback',
@@ -29,9 +33,9 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: null,
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        includeAssets: ['icon.svg', 'apple-touch-icon.png`, 'pwa-192x192.png`, 'pwa-512x512.png`, 'pwa-maskable-512x512.png'],
         manifest: {
-          id: '/',
+          id: base,
           name: 'Amanah',
           short_name: 'Amanah',
           description: 'Private, calm personal growth and halal-future companion app — Becoming better, one day at a time.',
@@ -39,24 +43,24 @@ export default defineConfig(() => {
           background_color: '#F9F8F6',
           display: 'standalone',
           orientation: 'portrait',
-          start_url: '/',
-          scope: '/',
+          start_url: base,
+          scope: base,
           prefer_related_applications: false,
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: `${base}pwa-192x192.png`,
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: `${base}pwa-512x512.png`,
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-maskable-512x512.png',
+              src: `${base}pwa-maskable-512x512.png`,
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
@@ -65,7 +69,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg}'],
-          navigateFallback: '/index.html',
+          navigateFallback: `${base}index.html`,
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
