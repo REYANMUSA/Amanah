@@ -206,6 +206,45 @@ class AuthService {
           display_name: localFound.display_name,
           created_at: localFound.created_at,
         };
+
+        // Prefer a real Supabase session when this account also exists there.
+        // Keep the local session as the offline fallback.
+        const sb = getSupabase();
+        if (sb) {
+          try {
+            const { data: supabaseData, error: supabaseError } = await sb.auth.signInWithPassword({
+              email: cleanEmail,
+              password: pass,
+            });
+            if (!supabaseError && supabaseData.user) {
+              const supabaseUser: UserAccount = {
+                id: supabaseData.user.id,
+                email: supabaseData.user.email || cleanEmail,
+                display_name:
+                  supabaseData.user.user_metadata?.display_name ||
+                  cleanEmail.split('@')[0] ||
+                  'Seeker',
+                created_at: supabaseData.user.created_at || new Date().toISOString(),
+              };
+              this.setLocalSession({
+                user: supabaseUser,
+                token: supabaseData.session?.access_token || 'supabase-token',
+              });
+
+              // Sync with backend server in background
+              fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: cleanEmail, password: pass }),
+              }).catch(() => {});
+
+              return { user: supabaseUser, error: null };
+            }
+          } catch (err) {
+            console.warn('Supabase local-user sign-in note:', err);
+          }
+        }
+
         this.setLocalSession({ user, token: 'session_' + Math.random().toString(36) });
 
         // Sync with backend server in background
