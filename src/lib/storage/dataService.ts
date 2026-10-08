@@ -566,6 +566,7 @@ class AmanahDataService {
         .from('relationships')
         .select('*')
         .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+        .in('status', ['pending', 'accepted'])
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
