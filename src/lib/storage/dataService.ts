@@ -34,6 +34,7 @@ const STORAGE_KEYS = {
   DHIKR_PROGRESS: 'amanah_dhikr_progress_v1',
   HADITH_PROGRESS: 'amanah_hadith_progress_v1',
   QURAN_TASKS: 'amanah_quran_tasks_v1',
+  QURAN_TASKS_BY_USER: 'amanah_quran_tasks_by_user_v1',
   EMERGENCY_REQUESTS: 'amanah_emergency_requests_v1',
   OFFLINE_QUEUE: 'amanah_offline_sync_queue_v1',
 };
@@ -791,12 +792,8 @@ class AmanahDataService {
 
     // A browser can retain local storage when accounts change. Never reuse another
     // account's Quran task or streak as this user's progress.
-    const storedTasks = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
     const localUserId = userId || this.getProfile().user_id;
-    const localTasks: Record<string, QuranTask> = {};
-    Object.entries(storedTasks).forEach(([key, task]) => {
-      if (task.user_id === localUserId) localTasks[key] = task;
-    });
+    const localTasks = this.getQuranTasksForUser(localUserId);
     let currentTask = localTasks[dateStr] || this.getQuranTask(dateStr);
     if (!localTasks[dateStr]) localTasks[dateStr] = currentTask;
 
@@ -845,7 +842,7 @@ class AmanahDataService {
 
         currentTask = mergedTasks[dateStr] || currentTask;
         if (!mergedTasks[dateStr]) mergedTasks[dateStr] = currentTask;
-        writeLocal(STORAGE_KEYS.QURAN_TASKS, mergedTasks);
+        this.saveQuranTasksForUser(userId, mergedTasks);
         quranStreakSource = 'cloud';
       } catch (err) {
         console.warn('Supabase Deen Together Quran history load error:', err);
@@ -1796,10 +1793,52 @@ class AmanahDataService {
   }
 
   // QUR'AN TASK
+  // Store Qur'an progress separately per account so a shared phone/browser cannot
+  // carry one person's completion into the next person's progress.
+  private getQuranTasksForUser(userId: string): Record<string, QuranTask> {
+    const allByUser = readLocal<Record<string, Record<string, QuranTask>>>(
+      STORAGE_KEYS.QURAN_TASKS_BY_USER,
+      {}
+    );
+    const tasks = { ...(allByUser[userId] || {}) };
+
+    // Import matching legacy rows once, without deleting or replacing legacy data.
+    const legacy = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    Object.entries(legacy).forEach(([date, task]) => {
+      if (task?.user_id === userId && !tasks[date]) tasks[date] = task;
+    });
+
+    if (Object.keys(tasks).length) {
+      writeLocal(STORAGE_KEYS.QURAN_TASKS_BY_USER, {
+        ...allByUser,
+        [userId]: tasks,
+      });
+    }
+    return tasks;
+  }
+
+  private saveQuranTasksForUser(
+    userId: string,
+    tasks: Record<string, QuranTask>
+  ): void {
+    const allByUser = readLocal<Record<string, Record<string, QuranTask>>>(
+      STORAGE_KEYS.QURAN_TASKS_BY_USER,
+      {}
+    );
+    const ownedTasks: Record<string, QuranTask> = {};
+    Object.entries(tasks).forEach(([date, task]) => {
+      if (task?.user_id === userId) ownedTasks[date] = task;
+    });
+    writeLocal(STORAGE_KEYS.QURAN_TASKS_BY_USER, {
+      ...allByUser,
+      [userId]: ownedTasks,
+    });
+  }
+
   getQuranTask(dateStr: string = getTodayKey()): QuranTask {
-    const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
     const profile = this.getProfile();
-    if (all[dateStr]?.user_id === profile.user_id) return all[dateStr];
+    const tasks = this.getQuranTasksForUser(profile.user_id);
+    if (tasks[dateStr]) return tasks[dateStr];
 
     const initial: QuranTask = {
       id: generateUUID(),
@@ -1811,8 +1850,8 @@ class AmanahDataService {
       notes: 'Muraaja — 3 pages',
       created_at: new Date().toISOString(),
     };
-    all[dateStr] = initial;
-    writeLocal(STORAGE_KEYS.QURAN_TASKS, all);
+    tasks[dateStr] = initial;
+    this.saveQuranTasksForUser(profile.user_id, tasks);
     return initial;
   }
 
@@ -1823,7 +1862,7 @@ class AmanahDataService {
   ): Promise<QuranTask> {
     const authUserId = await this.syncCurrentProfileToAuthUser();
     const current = this.getQuranTask(dateStr);
-    const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    const all = this.getQuranTasksForUser(authUserId || current.user_id);
     const count = Math.max(0, pages);
     const updated: QuranTask = {
       ...current,
@@ -1837,7 +1876,7 @@ class AmanahDataService {
       ),
     };
     all[dateStr] = updated;
-    writeLocal(STORAGE_KEYS.QURAN_TASKS, all);
+    this.saveQuranTasksForUser(updated.user_id, all);
 
     const sb = getSupabase();
     if (sb && authUserId) {
@@ -1884,8 +1923,8 @@ class AmanahDataService {
   }
 
   calculateQuranStreak(): number {
-    const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
     const userId = this.getProfile().user_id;
+    const all = this.getQuranTasksForUser(userId);
     let streak = 0;
     const cursor = new Date();
     for (let i = 0; i < 365; i += 1) {
