@@ -2,7 +2,7 @@
 -- This is additive: it does not update or delete existing progress rows.
 
 create table if not exists public.deen_daily_quiz_scores (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default extensions.uuid_generate_v4(),
   user_id text not null,
   date date not null,
   score integer not null default 0,
