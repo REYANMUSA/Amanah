@@ -30,7 +30,7 @@ import {
   QuranTask,
   DailyQuizRecord
 } from '../../types/database';
-import { dataService, getTodayKey } from '../../lib/storage/dataService';
+import { dataService, getTodayKey, DailyQuizProgress } from '../../lib/storage/dataService';
 import { triggerHapticFeedback, playCalmChime } from '../../lib/notifications/notificationService';
 import { CouplesGallery } from './CouplesGallery';
 import confetti from 'canvas-confetti';
@@ -68,6 +68,12 @@ export const UsView: React.FC<UsViewProps> = ({
   // Deen Together State
   const [quranTask, setQuranTask] = useState<QuranTask>(dataService.getQuranTask());
   const [quranStreak, setQuranStreak] = useState<number>(dataService.calculateQuranStreak());
+  const [quranStreakSource, setQuranStreakSource] = useState<'cloud' | 'local' | 'unavailable'>('local');
+  const [ownQuizProgress, setOwnQuizProgress] = useState<DailyQuizProgress | null>(null);
+  const [partnerQuranTask, setPartnerQuranTask] = useState<QuranTask | null>(null);
+  const [partnerQuranProgressAvailable, setPartnerQuranProgressAvailable] = useState(false);
+  const [partnerQuizScore, setPartnerQuizScore] = useState<DailyQuizProgress | null>(null);
+  const [partnerQuizProgressAvailable, setPartnerQuizProgressAvailable] = useState(false);
   const [quizRecord, setQuizRecord] = useState<DailyQuizRecord>(dataService.getDailyQuizRecord());
   const [showQuranModal, setShowQuranModal] = useState(false);
   const [isLoggingQuran, setIsLoggingQuran] = useState(false);
@@ -117,17 +123,30 @@ export const UsView: React.FC<UsViewProps> = ({
     setMemories(await dataService.loadMemories(rel));
     setEmergencyRequests(await dataService.loadEmergencyRequests());
     setPartnerGoals(await dataService.loadPartnerGoals(rel));
-    setQuranTask(dataService.getQuranTask());
-    setQuranStreak(dataService.calculateQuranStreak());
+    const deenProgress = await dataService.loadDeenTogetherProgress(rel);
+    setQuranTask(deenProgress.quranTask);
+    setQuranStreak(deenProgress.quranStreak);
+    setQuranStreakSource(deenProgress.quranStreakSource);
+    setOwnQuizProgress(deenProgress.ownQuizScore);
+    setPartnerQuranTask(deenProgress.partnerQuranTask);
+    setPartnerQuranProgressAvailable(deenProgress.partnerQuranAvailable);
+    setPartnerQuizScore(deenProgress.partnerQuizScore);
+    setPartnerQuizProgressAvailable(deenProgress.partnerQuizAvailable);
     setQuizRecord(dataService.getDailyQuizRecord());
   };
 
   useEffect(() => {
     void loadData();
-    const unsubscribe = dataService.subscribeToUsChanges(() => {
+    const unsubscribeUs = dataService.subscribeToUsChanges(() => {
       void loadData();
     });
-    return unsubscribe;
+    const unsubscribeQuiz = dataService.subscribeQuizScore((record) => {
+      setQuizRecord(record);
+    });
+    return () => {
+      unsubscribeUs();
+      unsubscribeQuiz();
+    };
   }, []);
 
   const handleCopyCode = () => {
@@ -337,6 +356,109 @@ export const UsView: React.FC<UsViewProps> = ({
   const isLinked = relationship.status === 'accepted';
   const partnerDisplayName = relationship.partner_name || (currentProfile.gender === 'male' ? 'Her' : 'Him');
   const activeAlerts = emergencyRequests.filter((r) => r.status === 'active');
+
+  const localQuizAnsweredCount = Object.keys(quizRecord.answers || {}).length;
+  const cloudQuizUpdatedAt = Date.parse(ownQuizProgress?.updated_at || '');
+  const localQuizUpdatedAt = Date.parse(quizRecord.updatedAt || '');
+  const useCloudQuizRecord = Boolean(
+    ownQuizProgress &&
+    (
+      ownQuizProgress.answered_count > localQuizAnsweredCount ||
+      (
+        ownQuizProgress.answered_count === localQuizAnsweredCount &&
+        Number.isFinite(cloudQuizUpdatedAt) &&
+        (!Number.isFinite(localQuizUpdatedAt) || cloudQuizUpdatedAt >= localQuizUpdatedAt)
+      )
+    )
+  );
+  const ownQuizAnsweredCount = Math.max(
+    localQuizAnsweredCount,
+    ownQuizProgress?.answered_count || 0
+  );
+  const ownQuizTotal = useCloudQuizRecord ? ownQuizProgress!.total : quizRecord.total;
+  const ownQuizScore = useCloudQuizRecord ? ownQuizProgress!.score : quizRecord.score;
+  const ownQuizCompleted = Boolean(
+    quizRecord.completed ||
+    (useCloudQuizRecord && ownQuizProgress?.completed)
+  );
+  const ownQuizProgressWidth = `${Math.min(100, Math.max(0, (ownQuizAnsweredCount / Math.max(1, ownQuizTotal)) * 100))}%`;
+  const ownQuizScoreLabel = ownQuizCompleted
+    ? `${ownQuizScore}/${ownQuizTotal}`
+    : `${ownQuizAnsweredCount}/${ownQuizTotal}`;
+  const ownQuizStatusLabel = ownQuizCompleted
+    ? 'Completed Today ✓'
+    : ownQuizAnsweredCount > 0
+    ? 'In Progress'
+    : 'Not logged yet';
+
+  const partnerQuizScoreLabel = !isLinked
+    ? '🔒'
+    : !partnerQuizProgressAvailable
+    ? '—'
+    : partnerQuizScore
+    ? `${partnerQuizScore.score}/${partnerQuizScore.total}`
+    : 'Pending';
+  const partnerQuizStatusLabel = !isLinked
+    ? 'Connect partner'
+    : !partnerQuizProgressAvailable
+    ? 'Unable to load'
+    : !partnerQuizScore
+    ? 'Not logged yet'
+    : partnerQuizScore.completed
+    ? 'Completed Today ✓'
+    : partnerQuizScore.answered_count > 0
+    ? 'In Progress'
+    : 'Not logged yet';
+  const partnerQuizProgressWidth = partnerQuizScore && partnerQuizProgressAvailable
+    ? `${Math.min(100, Math.max(0, (partnerQuizScore.answered_count / Math.max(1, partnerQuizScore.total)) * 100))}%`
+    : '0%';
+  const partnerQuranBusy = Boolean(
+    partnerQuranTask &&
+    !partnerQuranTask.completed &&
+    (partnerQuranTask.notes || '').toLowerCase().includes('busy')
+  );
+  const partnerQuranStatusLabel = !isLinked
+    ? 'Connect partner'
+    : !partnerQuranProgressAvailable
+    ? 'Unable to load'
+    : !partnerQuranTask
+    ? 'Not logged yet'
+    : partnerQuranTask.completed
+    ? 'Alhamdulillah, completed ✓'
+    : partnerQuranBusy
+    ? 'Busy today'
+    : partnerQuranTask.pages_completed > 0
+    ? `In progress · ${partnerQuranTask.pages_completed}/${partnerQuranTask.pages_target} pages`
+    : 'Not logged yet';
+  const partnerQuranBadgeLabel = !isLinked
+    ? '🔒 Private'
+    : !partnerQuranProgressAvailable
+    ? 'Unavailable'
+    : !partnerQuranTask
+    ? 'Not logged'
+    : partnerQuranTask.completed
+    ? 'Completed'
+    : partnerQuranBusy
+    ? 'Insha’Allah later'
+    : partnerQuranTask.pages_completed > 0
+    ? 'In progress'
+    : 'Pending';
+  const partnerQuranBadgeClass = isLinked && partnerQuranProgressAvailable && partnerQuranTask?.completed
+    ? 'bg-[#EBF5EE] text-[#1C512C] border border-[#CDE5D5]'
+    : partnerQuranBusy && isLinked && partnerQuranProgressAvailable
+    ? 'bg-[#FAF0E6] text-[#8B6E38] border border-[#EADBBD]'
+    : 'bg-[#F2EFE9] text-[#7A857D]';
+  const quranStreakLabel = quranStreakSource === 'unavailable'
+    ? `Local fallback · ${quranStreak}d`
+    : quranStreakSource === 'local'
+    ? `${quranStreak}d Local Streak`
+    : `${quranStreak}d Quran Streak`;
+  const mutualDeenChallengeCompleted = Boolean(
+    ownQuizCompleted &&
+    isLinked &&
+    partnerQuizProgressAvailable &&
+    partnerQuizScore?.completed
+  );
 
   return (
     <div className="space-y-5 pb-12">
@@ -588,17 +710,17 @@ export const UsView: React.FC<UsViewProps> = ({
                     {currentProfile.display_name}
                   </span>
                   <span className="font-mono text-xs font-bold text-[#2E473B]">
-                    {quizRecord.completed ? `${quizRecord.score}/5` : `${Object.keys(quizRecord.answers).length}/5`}
+                    {ownQuizScoreLabel}
                   </span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-[#E8E3D7] overflow-hidden">
                   <div 
                     className="h-full rounded-full bg-[#2E473B] transition-all"
-                    style={{ width: `${(Object.keys(quizRecord.answers).length / 5) * 100}%` }}
+                    style={{ width: ownQuizProgressWidth }}
                   />
                 </div>
                 <p className="text-[10px] text-[#7A857D]">
-                  {quizRecord.completed ? 'Completed Today ✓' : 'In Progress'}
+                  {ownQuizStatusLabel}
                 </p>
               </div>
 
@@ -609,30 +731,30 @@ export const UsView: React.FC<UsViewProps> = ({
                     {partnerDisplayName}
                   </span>
                   <span className="font-mono text-xs font-bold text-[#8B6E38]">
-                    {isLinked ? (quizRecord.completed ? '5/5' : 'Pending') : '🔒'}
+                    {partnerQuizScoreLabel}
                   </span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-[#E8E3D7] overflow-hidden">
                   <div 
                     className="h-full rounded-full bg-[#8B6E38] transition-all"
-                    style={{ width: isLinked ? (quizRecord.completed ? '100%' : '50%') : '0%' }}
+                    style={{ width: partnerQuizProgressWidth }}
                   />
                 </div>
                 <p className="text-[10px] text-[#7A857D]">
-                  {isLinked ? (quizRecord.completed ? 'Completed Today ✓' : 'Awaiting completion') : 'Connect partner'}
+                  {partnerQuizStatusLabel}
                 </p>
               </div>
             </div>
 
             {/* Mutual Barakah Celebration Banner */}
-            {quizRecord.completed && (
+            {mutualDeenChallengeCompleted && (
               <div className="p-3 rounded-xl bg-[#EBF5EE] border border-[#CDE5D5] text-xs text-[#1C512C] flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#2E473B] shrink-0" />
-                <span>Alhamdulillah! Deen Challenge completed today. May Allah increase both of you in wisdom.</span>
+                <span>Alhamdulillah, both of you completed today’s Deen Challenge. May Allah increase you in wisdom.</span>
               </div>
             )}
 
-            {!quizRecord.completed && onNavigateToDeen && (
+            {!ownQuizCompleted && onNavigateToDeen && (
               <button
                 onClick={onNavigateToDeen}
                 className="w-full py-2.5 rounded-xl bg-[#2E473B] text-white text-xs font-medium hover:bg-[#23382D] flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
@@ -663,7 +785,7 @@ export const UsView: React.FC<UsViewProps> = ({
               {/* Dedicated Quran Streak Counter */}
               <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FAF5EA] border border-[#EADBBD] text-xs font-semibold text-[#8B6E38]">
                 <Flame className="w-3.5 h-3.5 fill-[#D99A26] text-[#D99A26]" />
-                <span>{quranStreak}d Quran Streak</span>
+                <span>{quranStreakLabel}</span>
               </div>
             </div>
 
@@ -675,20 +797,28 @@ export const UsView: React.FC<UsViewProps> = ({
                   {currentProfile.display_name}
                 </span>
                 <p className="text-xs font-medium text-[#1F2421]">
-                  {quranTask.completed 
-                    ? 'Alhamdulillah, I did it ✓' 
-                    : quranTask.notes.includes('busy') 
-                    ? 'Busy today' 
+                  {quranTask.completed
+                    ? 'Alhamdulillah, I did it ✓'
+                    : (quranTask.notes || '').toLowerCase().includes('busy')
+                    ? 'Busy today'
+                    : quranTask.pages_completed > 0
+                    ? `In progress · ${quranTask.pages_completed}/${quranTask.pages_target} pages`
                     : 'Not logged yet'}
                 </p>
                 <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                   quranTask.completed
                     ? 'bg-[#EBF5EE] text-[#1C512C] border border-[#CDE5D5]'
-                    : quranTask.notes.includes('busy')
+                    : (quranTask.notes || '').toLowerCase().includes('busy')
                     ? 'bg-[#FAF0E6] text-[#8B6E38] border border-[#EADBBD]'
                     : 'bg-[#F2EFE9] text-[#7A857D]'
                 }`}>
-                  {quranTask.completed ? 'Completed' : quranTask.notes.includes('busy') ? 'Insha’Allah later' : 'Pending'}
+                  {quranTask.completed
+                    ? 'Completed'
+                    : (quranTask.notes || '').toLowerCase().includes('busy')
+                    ? 'Insha’Allah later'
+                    : quranTask.pages_completed > 0
+                    ? 'In progress'
+                    : 'Pending'}
                 </span>
               </div>
 
@@ -698,14 +828,10 @@ export const UsView: React.FC<UsViewProps> = ({
                   {partnerDisplayName}
                 </span>
                 <p className="text-xs font-medium text-[#1F2421]">
-                  {isLinked ? (quranTask.completed ? 'Alhamdulillah, completed ✓' : 'Reading tonight') : 'Connect partner'}
+                  {partnerQuranStatusLabel}
                 </p>
-                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                  isLinked && quranTask.completed
-                    ? 'bg-[#EBF5EE] text-[#1C512C] border border-[#CDE5D5]'
-                    : 'bg-[#F2EFE9] text-[#7A857D]'
-                }`}>
-                  {isLinked ? (quranTask.completed ? 'Completed' : 'Pending') : '🔒 Private'}
+                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${partnerQuranBadgeClass}`}>
+                  {partnerQuranBadgeLabel}
                 </span>
               </div>
             </div>
