@@ -53,6 +53,27 @@ interface PartnerProfileRow {
   gender?: string;
 }
 
+export interface DailyQuizProgress {
+  user_id: string;
+  date: string;
+  score: number;
+  total: number;
+  answered_count: number;
+  completed: boolean;
+  updated_at: string;
+}
+
+export interface DeenTogetherProgressSnapshot {
+  quranTask: QuranTask;
+  quranStreak: number;
+  quranStreakSource: 'cloud' | 'local' | 'unavailable';
+  ownQuizScore: DailyQuizProgress | null;
+  partnerQuranTask: QuranTask | null;
+  partnerQuranAvailable: boolean;
+  partnerQuizScore: DailyQuizProgress | null;
+  partnerQuizAvailable: boolean;
+}
+
 export function generateUUID(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -518,6 +539,7 @@ class AmanahDataService {
           }),
         });
       } catch {}
+      await this.syncDailyQuizProgressToSupabase(current);
     }
     return current;
   }
@@ -536,6 +558,71 @@ class AmanahDataService {
         }),
       });
     } catch {}
+  }
+
+  async syncCurrentDailyQuizProgress(dateStr: string = getTodayKey()): Promise<void> {
+    const record = this.getDailyQuizRecord(dateStr);
+    if (Object.keys(record.answers || {}).length === 0) return;
+    await this.syncDailyQuizProgressToSupabase(record);
+  }
+
+  private async syncDailyQuizProgressToSupabase(record: DailyQuizRecord): Promise<void> {
+    const sb = getSupabase();
+    const userId = await this.getAuthUserId();
+    if (!sb || !userId) return;
+
+    const total = Math.max(1, Number(record.total) || 5);
+    const answeredCount = Math.min(
+      Math.max(0, Object.keys(record.answers || {}).length),
+      total
+    );
+
+    // Do not overwrite a more complete score saved on another device with an older local copy.
+    const { data: existing, error: lookupError } = await sb
+      .from('deen_daily_quiz_scores')
+      .select('answered_count,completed,updated_at')
+      .eq('user_id', userId)
+      .eq('date', record.date)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.warn('Supabase Deen challenge score lookup error:', lookupError);
+      return;
+    }
+
+    if (existing) {
+      const cloudAnsweredCount = Number(existing.answered_count) || 0;
+      const cloudUpdatedAt = Date.parse(existing.updated_at || '');
+      const localUpdatedAt = Date.parse(record.updatedAt || '');
+
+      if (cloudAnsweredCount > answeredCount) return;
+      if (cloudAnsweredCount === answeredCount && existing.completed && !record.completed) return;
+      if (
+        cloudAnsweredCount === answeredCount &&
+        Number.isFinite(cloudUpdatedAt) &&
+        Number.isFinite(localUpdatedAt) &&
+        cloudUpdatedAt >= localUpdatedAt
+      ) {
+        return;
+      }
+    }
+
+    const { error } = await sb.from('deen_daily_quiz_scores').upsert(
+      {
+        user_id: userId,
+        date: record.date,
+        score: Math.min(total, Math.max(0, Number(record.score) || 0)),
+        total,
+        answered_count: answeredCount,
+        completed: Boolean(record.completed),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,date' }
+    );
+
+    if (error) {
+      console.warn('Supabase Deen challenge score sync error:', error);
+    }
   }
 
   // ---------------- CONNECTED US DATA ----------------
@@ -669,6 +756,121 @@ class AmanahDataService {
     }
   }
 
+  async loadDeenTogetherProgress(
+    relationship?: Relationship,
+    dateStr: string = getTodayKey()
+  ): Promise<DeenTogetherProgressSnapshot> {
+    const rel = relationship || await this.loadRelationship();
+    const sb = getSupabase();
+    const userId = await this.getAuthUserId();
+
+    const localTasks = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    let currentTask = localTasks[dateStr] || this.getQuranTask(dateStr);
+    if (!localTasks[dateStr]) localTasks[dateStr] = currentTask;
+
+    const mergedTasks: Record<string, QuranTask> = { ...localTasks };
+    let quranStreakSource: DeenTogetherProgressSnapshot['quranStreakSource'] =
+      sb && userId ? 'unavailable' : 'local';
+    let ownQuizScore: DailyQuizProgress | null = null;
+    let partnerQuranTask: QuranTask | null = null;
+    let partnerQuranAvailable = false;
+    let partnerQuizScore: DailyQuizProgress | null = null;
+    let partnerQuizAvailable = false;
+
+    if (sb && userId) {
+      await this.syncCurrentDailyQuizProgress(dateStr);
+
+      try {
+        const { data, error } = await sb
+          .from('deen_daily_quiz_scores')
+          .select('user_id,date,score,total,answered_count,completed,updated_at')
+          .eq('user_id', userId)
+          .eq('date', dateStr)
+          .maybeSingle();
+
+        if (error) throw error;
+        ownQuizScore = (data as DailyQuizProgress | null) || null;
+      } catch (err) {
+        console.warn('Supabase own Deen challenge score load error:', err);
+      }
+
+      // Cloud history is authoritative when a row exists; local-only dates are retained
+      // so previously saved offline progress is not discarded from this device's streak.
+      try {
+        const fromDate = this.shiftQuranDateKey(dateStr, -364);
+        const { data, error } = await sb
+          .from('qur_an_tasks')
+          .select('*')
+          .eq('user_id', userId)
+          .gte('date', fromDate)
+          .lte('date', dateStr);
+
+        if (error) throw error;
+
+        for (const row of (data || []) as QuranTask[]) {
+          mergedTasks[row.date] = row;
+        }
+
+        currentTask = mergedTasks[dateStr] || currentTask;
+        if (!mergedTasks[dateStr]) mergedTasks[dateStr] = currentTask;
+        writeLocal(STORAGE_KEYS.QURAN_TASKS, mergedTasks);
+        quranStreakSource = 'cloud';
+      } catch (err) {
+        console.warn('Supabase Deen Together Quran history load error:', err);
+      }
+
+      if (rel.status === 'accepted' && rel.user_a && rel.user_b) {
+        const partnerId = rel.user_a === userId ? rel.user_b : rel.user_a;
+        if (partnerId && partnerId !== userId) {
+          try {
+            const { data, error } = await sb
+              .from('qur_an_tasks')
+              .select('*')
+              .eq('user_id', partnerId)
+              .eq('date', dateStr)
+              .maybeSingle();
+
+            if (error) throw error;
+            partnerQuranTask = (data as QuranTask | null) || null;
+            partnerQuranAvailable = true;
+          } catch (err) {
+            console.warn('Supabase partner Quran status load error:', err);
+          }
+
+          try {
+            const { data, error } = await sb
+              .from('deen_daily_quiz_scores')
+              .select('user_id,date,score,total,answered_count,completed,updated_at')
+              .eq('user_id', partnerId)
+              .eq('date', dateStr)
+              .maybeSingle();
+
+            if (error) throw error;
+            partnerQuizScore = (data as DailyQuizProgress | null) || null;
+            partnerQuizAvailable = true;
+          } catch (err) {
+            console.warn('Supabase partner Deen challenge score load error:', err);
+          }
+        }
+      }
+    }
+
+    const streakTasks = quranStreakSource === 'cloud' ? mergedTasks : localTasks;
+    return {
+      quranTask: currentTask,
+      quranStreak:
+        quranStreakSource === 'unavailable'
+          ? this.calculateQuranStreakFromTasks(localTasks, dateStr)
+          : this.calculateQuranStreakFromTasks(streakTasks, dateStr),
+      quranStreakSource,
+      ownQuizScore,
+      partnerQuranTask,
+      partnerQuranAvailable,
+      partnerQuizScore,
+      partnerQuizAvailable,
+    };
+  }
+
   async loadPartnerGoals(relationship?: Relationship): Promise<Goal[]> {
     const sb = getSupabase();
     const rel = relationship || await this.loadRelationship();
@@ -779,6 +981,8 @@ class AmanahDataService {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'goals' }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'memories' }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_requests' }, onChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'qur_an_tasks' }, onChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deen_daily_quiz_scores' }, onChange)
       .subscribe();
 
     return () => {
@@ -1580,22 +1784,36 @@ class AmanahDataService {
     return initial;
   }
 
-  async updateQuranPages(pages: number, dateStr: string = getTodayKey()): Promise<QuranTask> {
+  async updateQuranPages(
+    pages: number,
+    dateStr: string = getTodayKey(),
+    notes?: string
+  ): Promise<QuranTask> {
     const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
     const current = this.getQuranTask(dateStr);
+    const authUserId = await this.getAuthUserId();
     const count = Math.max(0, pages);
     const updated: QuranTask = {
       ...current,
+      user_id: authUserId || current.user_id,
       pages_completed: count,
       completed: count >= current.pages_target,
+      notes: notes ?? (
+        (current.notes || '').toLowerCase().includes('busy')
+          ? `Muraaja — ${current.pages_target} pages`
+          : current.notes
+      ),
     };
     all[dateStr] = updated;
     writeLocal(STORAGE_KEYS.QURAN_TASKS, all);
 
     const sb = getSupabase();
-    if (sb && current.user_id !== 'local-user') {
+    if (sb && authUserId) {
       try {
-        await sb.from('qur_an_tasks').upsert(updated);
+        const { error } = await sb
+          .from('qur_an_tasks')
+          .upsert(updated, { onConflict: 'user_id,date' });
+        if (error) throw error;
       } catch (err) {
         console.warn('Supabase quran task update error:', err);
       }
@@ -1608,6 +1826,28 @@ class AmanahDataService {
     const nextCompleted = !current.completed;
     const pages = nextCompleted ? current.pages_target : 0;
     return this.updateQuranPages(pages, dateStr);
+  }
+
+  private shiftQuranDateKey(dateStr: string, offsetDays: number): string {
+    const cursor = new Date(`${dateStr}T12:00:00`);
+    cursor.setDate(cursor.getDate() + offsetDays);
+    return `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+  }
+
+  private calculateQuranStreakFromTasks(
+    tasks: Record<string, QuranTask>,
+    dateStr: string
+  ): number {
+    let streak = 0;
+    const cursor = new Date(`${dateStr}T12:00:00`);
+    for (let i = 0; i < 365; i += 1) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+      const task = tasks[key];
+      if (!task || !task.completed) break;
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
   }
 
   calculateQuranStreak(): number {
@@ -1625,9 +1865,10 @@ class AmanahDataService {
   }
 
   async logQuranStatus(status: 'completed' | 'busy'): Promise<{ task: QuranTask; streak: number }> {
+    const current = this.getQuranTask();
     const task = status === 'completed'
-      ? await this.updateQuranPages(this.getQuranTask().pages_target)
-      : this.getQuranTask();
+      ? await this.updateQuranPages(current.pages_target)
+      : await this.updateQuranPages(current.pages_completed, current.date, 'busy');
     return {
       task,
       streak: this.calculateQuranStreak(),
