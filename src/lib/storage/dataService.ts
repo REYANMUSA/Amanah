@@ -647,6 +647,22 @@ class AmanahDataService {
     }
   }
 
+  // Keep cached personal progress tied to the currently authenticated account.
+  private async syncCurrentProfileToAuthUser(): Promise<string | null> {
+    const userId = await this.getAuthUserId();
+    if (userId) {
+      const profile = this.getProfile();
+      if (profile.user_id !== userId) {
+        writeLocal(STORAGE_KEYS.PROFILE, {
+          ...profile,
+          user_id: userId,
+          updated_at: new Date().toISOString(),
+        });
+      }
+    }
+    return userId;
+  }
+
   async loadRelationship(): Promise<Relationship> {
     const sb = getSupabase();
     const userId = await this.getAuthUserId();
@@ -771,9 +787,16 @@ class AmanahDataService {
   ): Promise<DeenTogetherProgressSnapshot> {
     const rel = relationship || await this.loadRelationship();
     const sb = getSupabase();
-    const userId = await this.getAuthUserId();
+    const userId = await this.syncCurrentProfileToAuthUser();
 
-    const localTasks = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    // A browser can retain local storage when accounts change. Never reuse another
+    // account's Quran task or streak as this user's progress.
+    const storedTasks = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    const localUserId = userId || this.getProfile().user_id;
+    const localTasks: Record<string, QuranTask> = {};
+    Object.entries(storedTasks).forEach(([key, task]) => {
+      if (task.user_id === localUserId) localTasks[key] = task;
+    });
     let currentTask = localTasks[dateStr] || this.getQuranTask(dateStr);
     if (!localTasks[dateStr]) localTasks[dateStr] = currentTask;
 
@@ -1775,9 +1798,9 @@ class AmanahDataService {
   // QUR'AN TASK
   getQuranTask(dateStr: string = getTodayKey()): QuranTask {
     const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
-    if (all[dateStr]) return all[dateStr];
-
     const profile = this.getProfile();
+    if (all[dateStr]?.user_id === profile.user_id) return all[dateStr];
+
     const initial: QuranTask = {
       id: generateUUID(),
       user_id: profile.user_id,
@@ -1798,9 +1821,9 @@ class AmanahDataService {
     dateStr: string = getTodayKey(),
     notes?: string
   ): Promise<QuranTask> {
-    const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    const authUserId = await this.syncCurrentProfileToAuthUser();
     const current = this.getQuranTask(dateStr);
-    const authUserId = await this.getAuthUserId();
+    const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
     const count = Math.max(0, pages);
     const updated: QuranTask = {
       ...current,
@@ -1831,6 +1854,7 @@ class AmanahDataService {
   }
 
   async toggleQuranTask(dateStr: string = getTodayKey()): Promise<QuranTask> {
+    await this.syncCurrentProfileToAuthUser();
     const current = this.getQuranTask(dateStr);
     const nextCompleted = !current.completed;
     const pages = nextCompleted ? current.pages_target : 0;
@@ -1861,12 +1885,13 @@ class AmanahDataService {
 
   calculateQuranStreak(): number {
     const all = readLocal<Record<string, QuranTask>>(STORAGE_KEYS.QURAN_TASKS, {});
+    const userId = this.getProfile().user_id;
     let streak = 0;
     const cursor = new Date();
     for (let i = 0; i < 365; i += 1) {
       const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
       const task = all[key];
-      if (!task || !task.completed) break;
+      if (!task || task.user_id !== userId || !task.completed) break;
       streak += 1;
       cursor.setDate(cursor.getDate() - 1);
     }
@@ -1874,6 +1899,7 @@ class AmanahDataService {
   }
 
   async logQuranStatus(status: 'completed' | 'busy'): Promise<{ task: QuranTask; streak: number }> {
+    await this.syncCurrentProfileToAuthUser();
     const current = this.getQuranTask();
     const task = status === 'completed'
       ? await this.updateQuranPages(current.pages_target)
