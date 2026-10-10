@@ -358,16 +358,29 @@ export const UsView: React.FC<UsViewProps> = ({
   const activeAlerts = emergencyRequests.filter((r) => r.status === 'active');
 
   const localQuizAnsweredCount = Object.keys(quizRecord.answers || {}).length;
-  const cloudQuizHasMoreAnswers = Boolean(
-    ownQuizProgress && ownQuizProgress.answered_count > localQuizAnsweredCount
+  const cloudQuizUpdatedAt = Date.parse(ownQuizProgress?.updated_at || '');
+  const localQuizUpdatedAt = Date.parse(quizRecord.updatedAt || '');
+  const useCloudQuizRecord = Boolean(
+    ownQuizProgress &&
+    (
+      ownQuizProgress.answered_count > localQuizAnsweredCount ||
+      (
+        ownQuizProgress.answered_count === localQuizAnsweredCount &&
+        Number.isFinite(cloudQuizUpdatedAt) &&
+        (!Number.isFinite(localQuizUpdatedAt) || cloudQuizUpdatedAt >= localQuizUpdatedAt)
+      )
+    )
   );
   const ownQuizAnsweredCount = Math.max(
     localQuizAnsweredCount,
     ownQuizProgress?.answered_count || 0
   );
-  const ownQuizTotal = cloudQuizHasMoreAnswers ? ownQuizProgress!.total : quizRecord.total;
-  const ownQuizScore = cloudQuizHasMoreAnswers ? ownQuizProgress!.score : quizRecord.score;
-  const ownQuizCompleted = Boolean(quizRecord.completed || ownQuizProgress?.completed);
+  const ownQuizTotal = useCloudQuizRecord ? ownQuizProgress!.total : quizRecord.total;
+  const ownQuizScore = useCloudQuizRecord ? ownQuizProgress!.score : quizRecord.score;
+  const ownQuizCompleted = Boolean(
+    quizRecord.completed ||
+    (useCloudQuizRecord && ownQuizProgress?.completed)
+  );
   const ownQuizProgressWidth = `${Math.min(100, Math.max(0, (ownQuizAnsweredCount / Math.max(1, ownQuizTotal)) * 100))}%`;
   const ownQuizScoreLabel = ownQuizCompleted
     ? `${ownQuizScore}/${ownQuizTotal}`
@@ -436,7 +449,7 @@ export const UsView: React.FC<UsViewProps> = ({
     ? 'bg-[#FAF0E6] text-[#8B6E38] border border-[#EADBBD]'
     : 'bg-[#F2EFE9] text-[#7A857D]';
   const quranStreakLabel = quranStreakSource === 'unavailable'
-    ? 'Streak unavailable'
+    ? `Local fallback · ${quranStreak}d`
     : quranStreakSource === 'local'
     ? `${quranStreak}d Local Streak`
     : `${quranStreak}d Quran Streak`;
