@@ -539,7 +539,11 @@ class AmanahDataService {
           }),
         });
       } catch {}
-      await this.syncDailyQuizProgressToSupabase(current);
+      try {
+        await this.syncDailyQuizProgressToSupabase(current);
+      } catch (err) {
+        console.warn('Supabase Deen challenge score sync note:', err);
+      }
     }
     return current;
   }
@@ -563,7 +567,12 @@ class AmanahDataService {
   async syncCurrentDailyQuizProgress(dateStr: string = getTodayKey()): Promise<void> {
     const record = this.getDailyQuizRecord(dateStr);
     if (Object.keys(record.answers || {}).length === 0) return;
-    await this.syncDailyQuizProgressToSupabase(record);
+    try {
+      await this.syncDailyQuizProgressToSupabase(record);
+    } catch (err) {
+      // A temporary network failure must not prevent Deen Together from loading.
+      console.warn('Supabase Deen challenge score backfill note:', err);
+    }
   }
 
   private async syncDailyQuizProgressToSupabase(record: DailyQuizRecord): Promise<void> {
